@@ -1,0 +1,1727 @@
+[
+  {
+    "framework": "soc-2",
+    "frameworkName": "SOC 2",
+    "id": "CC6.1",
+    "slug": "cc6-1",
+    "metaTitle": "SOC 2 CC6.1 in code",
+    "metaDescription": "CC6.1 is the SOC 2 criterion engineers trip most: logical access restricted to what a role needs. The shapes it takes in a pull request (IAM widening, dropped authorization checks, broadened grants, default-allow, privilege escalation), a worked example, and what an auditor samples.",
+    "title": "Least privilege, enforced at the diff.",
+    "intro": [
+      "CC6.1 is one of the Trust Services Criteria a normal pull request can quietly weaken, because it is about logical access, and logical access often lives in code and configuration. The criterion asks that access to your systems and data be restricted to the users and processes that are authorized to have it. In practice that means least privilege: a role can reach what it needs for its job, and no more."
+    ],
+    "shapesIntro": "CC6.1 rarely breaks with a line that says 'grant everyone admin'. It breaks in ordinary, reasonable-looking changes. These are the shapes that recur.",
+    "shapes": [
+      {
+        "label": "An access policy widens",
+        "detail": "An IAM role, security group, or grant gains broader actions or a wildcard, so a component can now do more than its job needs."
+      },
+      {
+        "label": "An authorization check is dropped",
+        "detail": "A route loses its role or ownership check, or an authorization middleware stops being applied to a new endpoint, so a request that should be rejected now succeeds."
+      },
+      {
+        "label": "A data grant broadens",
+        "detail": "A database role gains access to tables or rows it did not have, row-level security is loosened, or a service account is pointed at a database it had no reason to reach."
+      },
+      {
+        "label": "A default flips to allow",
+        "detail": "Access changes from default-deny to default-allow: a new resource ships world-readable, or a permission check defaults to true on an unknown case."
+      },
+      {
+        "label": "A privilege-escalation path opens",
+        "detail": "A lower-privileged actor gains a way to act as a higher one: an internal flag that bypasses the role check, or a token minted with more scope than the caller holds."
+      }
+    ],
+    "example": {
+      "title": "A refactor that drops an authorization check.",
+      "setup": "A route is being tidied up. The role check in the middle looks redundant next to the auth middleware, so it goes. The endpoint still requires a logged-in user, but it no longer requires the right one: now any authenticated user can delete any project.",
+      "file": "routes/projects.ts",
+      "delta": "+1 -2",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- router.delete(\"/projects/:id\", requireRole(\"admin\"),"
+        },
+        {
+          "kind": "del",
+          "text": "-   loadProject, deleteProject)"
+        },
+        {
+          "kind": "add",
+          "text": "+ router.delete(\"/projects/:id\", loadProject, deleteProject)"
+        }
+      ],
+      "clause": "SOC 2 CC6.1",
+      "finding": "This removes the role check from a destructive endpoint. The auth middleware confirms the caller is signed in, but CC6.1 is about whether they are authorized for this action, and deleting any project is not something every user should be able to do. Restore the authorization check (a role or ownership check on the project) before the handler."
+    },
+    "auditor": {
+      "heading": "CC6.1 is sampled, not just stated.",
+      "paragraph": "In a SOC 2 examination, CC6.1 is not satisfied by a policy document saying you do least privilege. The auditor samples actual access: who and what can reach a given system, whether those grants match documented roles, and whether anything is broader than its purpose. A wildcard role, an endpoint missing its authorization check, or a service account with standing access it never uses is exactly the kind of exception that becomes a finding, and it usually entered the system in a single pull request months earlier. Catching the change at the diff helps keep those access exceptions out of the sample."
+    },
+    "boundary": {
+      "title": "A review, not an attestation.",
+      "paragraph": "heygrc flags changes that touch CC6.1 and cites the criterion so the fix happens in the pull request. It does not run your audit or issue an opinion. It catches the access change early so the examination has fewer exceptions to explain."
+    }
+  },
+  {
+    "framework": "soc-2",
+    "frameworkName": "SOC 2",
+    "id": "CC6.6",
+    "slug": "cc6-6",
+    "metaTitle": "SOC 2 CC6.6 in code",
+    "metaDescription": "CC6.6 is the SOC 2 criterion about protecting against threats from outside your system boundary: the perimeter. The shapes it takes in a pull request (a security group opened to the world, a resource made publicly reachable, an admin port exposed, an allowlist widened), a worked example of a database opened to 0.0.0.0/0, and what an auditor checks.",
+    "title": "Keeping the outside outside.",
+    "intro": [
+      "CC6.6 is the SOC 2 criterion about protecting against threats from sources outside your system boundaries: the perimeter. It asks that you put access controls between the outside world and your systems, so what should only be reachable from inside is not sitting open to the internet. Most of that perimeter is now infrastructure-as-code, a security group, a firewall rule, a network policy, which means it is decided in a pull request and can be widened in one."
+    ],
+    "shapesIntro": "CC6.6 weakens when a change opens the boundary, usually to make something reachable quickly. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A firewall or security group opens to the world",
+        "detail": "An ingress rule's source is widened to 0.0.0.0/0 (or ::/0), so a port that was reachable only from inside is now reachable from the whole internet."
+      },
+      {
+        "label": "A managed resource is made publicly reachable",
+        "detail": "A database, cache, or bucket flips from private to public (a publicly-accessible flag, a public subnet), so it can be reached directly from outside rather than only through the app."
+      },
+      {
+        "label": "An admin or management port is exposed",
+        "detail": "SSH, RDP, a database port, or an admin console is opened to the internet instead of being reached through a bastion or VPN."
+      },
+      {
+        "label": "An allowlist widens",
+        "detail": "A restrictive source range is broadened, a single address becomes a whole range, or an allowlist gains a wildcard, so more of the outside can get in."
+      },
+      {
+        "label": "A boundary control is bypassed",
+        "detail": "A new path skips the load balancer, gateway, or WAF that fronts the system, so external traffic reaches an internal service directly."
+      }
+    ],
+    "example": {
+      "title": "A security group that opens a database to the internet.",
+      "setup": "A managed Postgres, sitting on a publicly-routable endpoint, needs to be reachable from an engineer's laptop for a one-off migration, so the ingress rule's source is widened to get it working. The quick change is left in, and now the security group accepts connections from any address, not just the application's subnet, on a database that has a path from the internet.",
+      "file": "infra/security_groups.tf",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "resource \"aws_security_group_rule\" \"db_ingress\" {"
+        },
+        {
+          "kind": "ctx",
+          "text": "  from_port   = 5432"
+        },
+        {
+          "kind": "del",
+          "text": "-  cidr_blocks = [var.app_subnet_cidr]"
+        },
+        {
+          "kind": "add",
+          "text": "+  cidr_blocks = [\"0.0.0.0/0\"]"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "SOC 2 CC6.6",
+      "finding": "This removes the source restriction on the database port, so the security group now permits ingress from any address; on a database that has a path from the internet, that is the whole internet. CC6.6 is about protecting against threats from outside your system boundary, and a database reachable from anywhere is exactly the exposure it is aimed at. Restrict the source to the application's subnet or security group, or reach it through a bastion for one-off access, rather than 0.0.0.0/0."
+    },
+    "auditor": {
+      "heading": "The perimeter is checked against what is actually reachable.",
+      "paragraph": "An auditor does not take 'we have a firewall' at face value; they look at the actual boundary: which ports are open, to what sources, and whether anything meant to be internal is reachable from outside. A security group opened to 0.0.0.0/0, a database flipped to publicly accessible, or an admin port exposed to the internet is the kind of exception that becomes a finding, and it usually arrived in a single infrastructure change. Catching it at the diff keeps the exposure out of the environment the assessment samples."
+    },
+    "boundary": {
+      "title": "A review, not a network scan.",
+      "paragraph": "heygrc flags changes that touch CC6.6 and cites the criterion so the fix happens in the pull request. It does not scan your perimeter or run your cloud posture tooling. It catches the moment a change opens the boundary, at the diff."
+    }
+  },
+  {
+    "framework": "soc-2",
+    "frameworkName": "SOC 2",
+    "id": "CC6.7",
+    "slug": "cc6-7",
+    "metaTitle": "SOC 2 CC6.7 in code",
+    "metaDescription": "CC6.7 covers protecting data in transit and its movement. The shapes it takes in a pull request (TLS floors, plaintext internal hops, new data exports), a worked example of an internal call falling back to plain HTTP, and what an assessor looks for.",
+    "title": "Protecting data as it moves.",
+    "intro": [
+      "CC6.7 is about restricting and protecting the transmission and movement of data: data in transit should be protected, and movement of data outside a boundary should be controlled. Much of it is decided by transport configuration and by where new data flows are wired, which makes it a pull-request concern."
+    ],
+    "shapesIntro": "CC6.7 weakens when a transport stops being protected or when data starts moving somewhere new without the expected controls. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A TLS floor drops",
+        "detail": "A minimum TLS version is lowered, a strong-cipher requirement is relaxed, or a downgrade becomes possible on a path that carries sensitive data."
+      },
+      {
+        "label": "An internal hop goes plaintext",
+        "detail": "A service-to-service call that carried sensitive data is changed to plain HTTP, or an internal endpoint stops requiring TLS, on the assumption the network is trusted."
+      },
+      {
+        "label": "Certificate verification is disabled",
+        "detail": "Verification is turned off to work around a certificate problem, so the channel is no longer authenticated and can be intercepted."
+      },
+      {
+        "label": "A new export sends data out",
+        "detail": "A webhook, sync, or third-party integration starts moving data outside its boundary without the controls the criterion expects on that movement."
+      },
+      {
+        "label": "A protected field becomes loggable",
+        "detail": "Sensitive data that was kept off a transport starts being sent to a sink (a log shipper, an analytics pipeline) that was not in scope to carry it."
+      }
+    ],
+    "example": {
+      "title": "An internal call that falls back to plain HTTP.",
+      "setup": "A new internal client is added for a service that exposes both HTTP and HTTPS. To get it working quickly the call is wired to the plain-HTTP port. It works, and the sensitive payload it carries now crosses the network unprotected.",
+      "file": "clients/billing.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- const BILLING_URL = \"https://billing.internal:8443\""
+        },
+        {
+          "kind": "add",
+          "text": "+ const BILLING_URL = \"http://billing.internal:8080\""
+        },
+        {
+          "kind": "ctx",
+          "text": "const res = await post(`${BILLING_URL}/charge`, { card, amount })"
+        }
+      ],
+      "clause": "SOC 2 CC6.7",
+      "finding": "The charge payload now crosses the network in plaintext. CC6.7 expects data in transit to be protected, and 'it is only the internal network' is not the control the criterion describes. Point the client at the HTTPS endpoint and keep TLS on every hop that carries sensitive data."
+    },
+    "auditor": {
+      "heading": "Transit protection is checked end to end.",
+      "paragraph": "An assessor does not just confirm your public endpoints use TLS; they look at where sensitive data moves and whether it is protected the whole way, including internal hops and new integrations. A single call quietly moved to plain HTTP, or a new export with no controls on it, is the kind of gap a configuration review surfaces. The change that introduced it was a diff, which is the cheapest place to have caught it."
+    },
+    "boundary": {
+      "title": "A review, not a network audit.",
+      "paragraph": "heygrc flags changes that touch CC6.7 and cites the criterion so the fix happens in the pull request. It does not map your whole data-flow topology or run your assessment. It catches the moment a transport stops being protected, at the diff."
+    }
+  },
+  {
+    "framework": "soc-2",
+    "frameworkName": "SOC 2",
+    "id": "CC7.2",
+    "slug": "cc7-2",
+    "metaTitle": "SOC 2 CC7.2 in code",
+    "metaDescription": "CC7.2 is about monitoring for anomalies and security events. The shapes it takes in a pull request (deleted alert rules, loosened thresholds, dropped metrics), a worked example of an alert on failed-login spikes being removed, and what an auditor checks.",
+    "title": "Noticing, before someone else does.",
+    "intro": [
+      "CC7.2 is the SOC 2 criterion about monitoring: detecting anomalies and security events so you can respond to them. It sits on top of logging, a log records that something happened, monitoring is what notices and raises a hand. A control you cannot see operating is a control you cannot respond to, which is why detection has its own criterion."
+    ],
+    "shapesIntro": "CC7.2 weakens when a change quietly shrinks what the system can notice. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "An alert rule is deleted",
+        "detail": "A rule that fired on a security condition (a spike in failed logins, an unexpected privilege grant) is removed because it was noisy, taking the detection with it."
+      },
+      {
+        "label": "A threshold is loosened",
+        "detail": "An alert's threshold is raised so far that the anomaly it was meant to catch no longer trips it, leaving the rule present but effectively blind."
+      },
+      {
+        "label": "A metric stops being emitted",
+        "detail": "Instrumentation that fed a dashboard or alert is removed, so the thing being watched goes dark even though the alert still exists."
+      },
+      {
+        "label": "Coverage does not follow new surface",
+        "detail": "A new service, endpoint, or path ships with no monitoring, so a whole area of the system is unwatched by default."
+      },
+      {
+        "label": "A detection is disabled",
+        "detail": "Anomaly detection or a security monitor is turned off (a feature flag, a commented-out check) to cut noise, and never turned back on."
+      }
+    ],
+    "example": {
+      "title": "An alert on failed-login spikes, removed.",
+      "setup": "An alert that fires when failed logins spike has been paging people during load tests, so a change deletes it from the monitoring config. The noise stops, and so does the only automated way the team would notice a brute-force attempt in production.",
+      "file": "monitoring/alerts.yaml",
+      "delta": "+0 -4",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "groups:"
+        },
+        {
+          "kind": "del",
+          "text": "-  - alert: FailedLoginSpike"
+        },
+        {
+          "kind": "del",
+          "text": "-    expr: rate(auth_failures_total[5m]) > 20"
+        },
+        {
+          "kind": "del",
+          "text": "-    for: 2m"
+        },
+        {
+          "kind": "del",
+          "text": "-    labels: { severity: security }"
+        }
+      ],
+      "clause": "SOC 2 CC7.2",
+      "finding": "This removes the detection for a spike in failed logins, the signal you would want if someone were brute-forcing an account. CC7.2 expects the system to monitor for and detect anomalies like this. If it is too noisy, tune the threshold or route it away from paging, but keep the detection rather than deleting it."
+    },
+    "auditor": {
+      "heading": "Monitoring is checked as a capability, not a promise.",
+      "paragraph": "An auditor looks for evidence that you actually detect and respond to anomalies: the alerts that exist, that they fire, and that someone acts when they do. A change that deleted a security alert or quietly blinded a metric is the gap behind a claim that you monitor. It shows up in the diff to the monitoring config, which is the cheapest place to catch it."
+    },
+    "boundary": {
+      "title": "A review, not your monitoring stack.",
+      "paragraph": "heygrc flags changes that touch CC7.2 and cites the criterion so the fix happens in the pull request. It does not run your alerting or your incident response. It catches the moment a detection is removed or blinded, at the diff."
+    }
+  },
+  {
+    "framework": "soc-2",
+    "frameworkName": "SOC 2",
+    "id": "CC8.1",
+    "slug": "cc8-1",
+    "metaTitle": "SOC 2 CC8.1 in code",
+    "metaDescription": "CC8.1 is about managing changes: that they are authorized, designed, tested, and approved before they reach production. The shapes it takes in a pull request, a worked example of a required deploy approval being removed, and what an auditor checks.",
+    "title": "Change management, in the pipeline.",
+    "intro": [
+      "CC8.1 is the SOC 2 criterion about change management: changes to infrastructure, data, and software should be authorized, designed, developed, tested, and approved before they go live. A lot of that lives in your pipeline and your branch protection, which means a pull request can quietly remove the very controls that govern how changes ship."
+    ],
+    "shapesIntro": "CC8.1 weakens when a change loosens the process that is supposed to govern changes. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A required approval is removed",
+        "detail": "A required review or approval gate before a production deploy is dropped from the CI config or branch protection, so changes can ship without sign-off."
+      },
+      {
+        "label": "A migration skips review",
+        "detail": "A database migration or data change is wired to run on deploy with no separate review or approval of a change that alters production data."
+      },
+      {
+        "label": "Tests stop gating the merge",
+        "detail": "A required status check (the test suite, a security scan) is made non-blocking or removed, so unverified changes can merge."
+      },
+      {
+        "label": "A bypass path is added",
+        "detail": "An emergency or admin path is added that lets a change reach production outside the normal pipeline, with no equivalent controls on it."
+      },
+      {
+        "label": "The rollback is removed",
+        "detail": "A safe rollback or migration-down path is dropped, so a change can ship that cannot be cleanly reverted if it goes wrong."
+      }
+    ],
+    "example": {
+      "title": "A required deploy approval, removed.",
+      "setup": "A required manual approval before production deploys has been slowing releases, so a change drops the protection rule. Deploys get faster, and now any merge to main reaches production with no one signing off on the change.",
+      "file": ".github/workflows/deploy.yml",
+      "delta": "+0 -2",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "jobs:"
+        },
+        {
+          "kind": "ctx",
+          "text": "  deploy:"
+        },
+        {
+          "kind": "del",
+          "text": "-    environment:"
+        },
+        {
+          "kind": "del",
+          "text": "-      name: production   # requires a reviewer approval"
+        },
+        {
+          "kind": "ctx",
+          "text": "    steps:"
+        }
+      ],
+      "clause": "SOC 2 CC8.1",
+      "finding": "Removing the production environment's required approval means changes now reach production with no sign-off. CC8.1 expects changes to be authorized and approved before they go live. If approvals are too slow, narrow who or what needs them, or automate the checks, but keep an approval step rather than removing it."
+    },
+    "auditor": {
+      "heading": "Change management is sampled against real changes.",
+      "paragraph": "An auditor samples changes that went to production and looks for the evidence that each was reviewed, tested, and approved, often the pull request, its approvals, and the passing checks. A change that removed a required approval or made a test non-blocking is the gap behind that evidence, and it is visible in the diff to the pipeline or branch-protection config."
+    },
+    "boundary": {
+      "title": "A review, not your release process.",
+      "paragraph": "heygrc flags changes that touch CC8.1 and cites the criterion so the fix happens in the pull request. It does not run your deploys or own your branch protection. It catches the moment a change loosens the process that governs changes, at the diff."
+    }
+  },
+  {
+    "framework": "iso-27001",
+    "frameworkName": "ISO 27001",
+    "id": "A.8.15",
+    "slug": "a-8-15",
+    "metaTitle": "ISO 27001 A.8.15 in code",
+    "metaDescription": "A.8.15 (logging) is an ISO 27001:2022 control that routine changes quietly weaken. The shapes it takes in a pull request, a worked example of an authentication-failure log dropped below the production level, and what an auditor checks.",
+    "title": "Logging, the control that dies quietly.",
+    "intro": [
+      "ISO 27001:2022 A.8.15 (logging) expects security-relevant events (logins, errors, faults, access to sensitive data) to be recorded, kept for a defined period, and protected from tampering. It is load-bearing for A.8.16 (monitoring) and for any later investigation: you cannot detect or reconstruct what was never recorded. And it is easy to weaken without noticing, because a log is the kind of line that gets tidied away."
+    ],
+    "shapesIntro": "A.8.15 rarely breaks with a dramatic change. It breaks when a security-relevant event stops being recorded. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A security log is removed",
+        "detail": "A log call for an authentication event, a privilege change, or access to sensitive data is deleted in a cleanup because it looked noisy."
+      },
+      {
+        "label": "A log level drops below production",
+        "detail": "A security event is moved to a level (debug) that is not emitted in production, so it silently stops being recorded where it matters."
+      },
+      {
+        "label": "The actor is dropped from the record",
+        "detail": "A log keeps firing but stops including who did it, so the event can no longer be attributed during an investigation."
+      },
+      {
+        "label": "A new privileged action ships unlogged",
+        "detail": "A new admin or destructive operation is added with no audit record at all, so there is nothing to sample later."
+      },
+      {
+        "label": "Retention is shortened",
+        "detail": "A log's retention or rotation is reduced below what the control expects, so the record is gone before anyone needs it."
+      }
+    ],
+    "example": {
+      "title": "Auth failures dropped below the production log level.",
+      "setup": "Authentication-failure logs are noisy in development, so a change moves them from a warning to a debug level. In production the log level is set to info, so those failures now vanish from the record entirely, exactly the events you most want when investigating an intrusion.",
+      "file": "auth/login.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "if (!valid) {"
+        },
+        {
+          "kind": "del",
+          "text": "-  logger.warn(\"auth.failed\", { userId, ip })"
+        },
+        {
+          "kind": "add",
+          "text": "+  logger.debug(\"auth.failed\", { userId, ip })"
+        },
+        {
+          "kind": "ctx",
+          "text": "  return unauthorized()"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "ISO 27001:2022 A.8.15",
+      "finding": "With production at info level, dropping auth failures to debug means they are no longer recorded in production. A.8.15 expects security-relevant events, including failed authentication, to be logged and retained, and A.8.16 (monitoring) depends on them. Keep them at warning or route them to the security log rather than silencing them in production."
+    },
+    "auditor": {
+      "heading": "Logging is sampled against real events.",
+      "paragraph": "An auditor checks that security-relevant events are actually logged, retained for the period your policy states, and protected from tampering, and they will sample specific event types (logins, privilege changes, access to sensitive data). A change that silently stopped emitting one of those, by deleting it or dropping it below the production level, is the gap they find. The change that introduced it was usually an ordinary pull request that looked like noise reduction."
+    },
+    "boundary": {
+      "title": "A review, not your SIEM.",
+      "paragraph": "heygrc flags changes that touch A.8.15 and cites the control so the fix happens in the pull request. It does not run your logging pipeline or your monitoring. It catches the moment a security event stops being recorded, at the diff."
+    }
+  },
+  {
+    "framework": "iso-27001",
+    "frameworkName": "ISO 27001",
+    "id": "A.8.24",
+    "slug": "a-8-24",
+    "metaTitle": "ISO 27001 A.8.24 in code",
+    "metaDescription": "A.8.24 (use of cryptography) is decided in code: key handling, algorithm choice, and TLS configuration. The shapes it takes in a pull request, a worked example of a key hardcoded instead of read from a secret store, and what an auditor checks.",
+    "title": "Cryptography is mostly key handling.",
+    "intro": [
+      "ISO 27001:2022 A.8.24 (use of cryptography) is about the effective use of cryptography to protect information, including key management. In code that mostly comes down to three things: are keys handled safely, are the algorithms strong, and is the configuration sound. All three are pull-request decisions, and the failure that shows up in code is often a key in the wrong place rather than a weak algorithm."
+    ],
+    "shapesIntro": "A.8.24 weakens when a key is mishandled or a primitive is downgraded. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A key lands in code",
+        "detail": "A secret or private key is hardcoded or committed instead of read from a managed secret store, so it lives in the repository and its history."
+      },
+      {
+        "label": "A weak primitive is introduced",
+        "detail": "A change uses a broken or weak hash or cipher (for example for password hashing or signing) where a strong one is required."
+      },
+      {
+        "label": "A TLS floor drops",
+        "detail": "A minimum protocol version or cipher requirement is lowered, weakening the cryptography protecting a transport."
+      },
+      {
+        "label": "Verification is disabled",
+        "detail": "Certificate or signature verification is turned off, so an encrypted channel or signed artifact is no longer actually trusted."
+      },
+      {
+        "label": "Key rotation or scope is loosened",
+        "detail": "A key's lifetime is extended indefinitely, or one key starts being reused across boundaries it should not cross."
+      }
+    ],
+    "example": {
+      "title": "A signing key hardcoded to fix a deploy.",
+      "setup": "A token-signing key was being read from a secret store, but the store was not configured in a new environment and the deploy failed. The quick fix is to inline the key so the service starts. It does, and the private key is now in the repository and its history.",
+      "file": "auth/tokens.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- const SIGNING_KEY = await secrets.get(\"jwt-signing-key\")"
+        },
+        {
+          "kind": "add",
+          "text": "+ const SIGNING_KEY = \"<the PEM private key, pasted inline>\""
+        },
+        {
+          "kind": "ctx",
+          "text": "const token = sign(claims, SIGNING_KEY)"
+        }
+      ],
+      "clause": "ISO 27001:2022 A.8.24",
+      "finding": "A signing key in source lives in the repository, its history, and every clone and CI cache, which defeats the key management A.8.24 expects. Restore it from the secret store and configure the store in the new environment, and rotate the key, since a key that was committed must be treated as exposed."
+    },
+    "auditor": {
+      "heading": "Key management is the part that gets sampled.",
+      "paragraph": "An auditor looking at A.8.24 cares less about which cipher you picked and more about how keys are generated, stored, rotated, and retired. A secret found in source, a key with no rotation, or verification quietly disabled is the kind of finding that comes up, and they tend to enter through a change that was trying to unblock something. The pull request is where the key decision is made and the cheapest place to correct it."
+    },
+    "boundary": {
+      "title": "A review, not a crypto audit.",
+      "paragraph": "heygrc flags changes that touch A.8.24 and cites the control so the fix happens in the pull request. It does not design your key-management scheme or run your assessment. It catches the moment a key is mishandled or a primitive is weakened, at the diff."
+    }
+  },
+  {
+    "framework": "iso-27001",
+    "frameworkName": "ISO 27001",
+    "id": "A.8.28",
+    "slug": "a-8-28",
+    "metaTitle": "ISO 27001 A.8.28 in code",
+    "metaDescription": "A.8.28 (secure coding) is the ISO 27001:2022 control that lives most directly in the code itself. The shapes it takes in a pull request, a worked example of a query built by string concatenation, and what an auditor checks.",
+    "title": "Secure coding, in the code.",
+    "intro": [
+      "ISO 27001:2022 A.8.28 (secure coding) is about applying secure-coding principles so that software does not ship with the kinds of weakness attackers rely on: injection, unsafe handling of input and output, insecure defaults. Of all the Annex A controls it is the one that lives most directly in the code, which makes the pull request the natural place to hold it."
+    ],
+    "shapesIntro": "A.8.28 weakens when a change introduces a known-bad pattern or removes a guard against one. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A query is built by string concatenation",
+        "detail": "User input is interpolated straight into a SQL, shell, or query string instead of being passed as a parameter, opening an injection path."
+      },
+      {
+        "label": "Output is rendered unescaped",
+        "detail": "User-controlled data is written into HTML, a template, or a response without escaping, opening a cross-site-scripting path."
+      },
+      {
+        "label": "A security lint or check is disabled",
+        "detail": "A static-analysis rule or a security linter is silenced (an inline ignore, a disabled rule) to make a change pass rather than fixing what it flagged."
+      },
+      {
+        "label": "Untrusted input is deserialised",
+        "detail": "Data from outside the trust boundary is deserialised into objects or evaluated, a classic remote-code-execution pattern."
+      },
+      {
+        "label": "Validation is removed",
+        "detail": "Input validation or sanitisation that protected a path is dropped in a refactor, so malformed or hostile input now reaches the logic behind it."
+      }
+    ],
+    "example": {
+      "title": "A query stitched together from user input.",
+      "setup": "A search feature is being added. The quickest way to filter by the user's term is to drop it straight into the SQL string. It works for normal input, and it is a SQL injection: a crafted term can read or change data it should never reach.",
+      "file": "search/query.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- const rows = await db.query(\"SELECT * FROM items WHERE name = $1\", [term])"
+        },
+        {
+          "kind": "add",
+          "text": "+ const rows = await db.query(`SELECT * FROM items WHERE name = '${term}'`)"
+        },
+        {
+          "kind": "ctx",
+          "text": "return rows"
+        }
+      ],
+      "clause": "ISO 27001:2022 A.8.28",
+      "finding": "Interpolating the search term into the SQL string is a SQL-injection path: a crafted term breaks out of the string and runs as query logic. A.8.28 (secure coding) expects exactly this class of weakness to be avoided. Go back to a parameterised query, which keeps the input as data rather than code."
+    },
+    "auditor": {
+      "heading": "Secure coding is checked at the practice, and at the code.",
+      "paragraph": "An auditor looks for evidence that secure coding is part of your process: code review, static analysis, dependency scanning, and that findings are acted on. A change that introduces an injection path or disables a security check is the concrete failure behind that process, and it is visible in the diff. Catching it in review is both the fix and the evidence that the practice works."
+    },
+    "boundary": {
+      "title": "A review, not a full SAST suite.",
+      "paragraph": "heygrc flags changes that touch A.8.28 and cites the control so the fix happens in the pull request. It is not a replacement for your static analysis or your security testing; it is the framework-aware layer that ties a secure-coding weakness to the control it breaks."
+    }
+  },
+  {
+    "framework": "iso-27001",
+    "frameworkName": "ISO 27001",
+    "id": "A.8.31",
+    "slug": "separation-of-environments",
+    "metaTitle": "ISO 27001 A.8.31 in code",
+    "metaDescription": "A.8.31 (separation of development, test and production) is decided in configuration: connection strings, env vars, seed scripts, CI. The shapes it takes in a pull request, a worked example of a test suite pointed at the production database, and what an auditor checks.",
+    "title": "Keeping test out of production.",
+    "intro": [
+      "ISO 27001:2022 A.8.31 (separation of development, test and production environments) expects those environments to be kept apart, so that work in development or test cannot reach, change, or expose production. A lot of that boundary lives in configuration: connection strings, environment variables, seed and fixture scripts, and CI pipelines. Which means a single change to a config file can quietly collapse it."
+    ],
+    "shapesIntro": "A.8.31 weakens when a non-production path gains a way into production, or when production data and credentials leak down into a lower environment. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A test config points at production",
+        "detail": "A test or CI database URL, endpoint, or config is set to a production resource, so a test run reads or writes real data."
+      },
+      {
+        "label": "Production secrets land in a lower environment",
+        "detail": "A staging or development config is handed production credentials, keys, or endpoints, collapsing the boundary the moment that environment is less protected."
+      },
+      {
+        "label": "A guard against cross-environment access is removed",
+        "detail": "An environment check that stopped a destructive, seed, or reset operation from running anywhere but a dedicated environment is dropped, so it can now run against production."
+      },
+      {
+        "label": "Fixtures or seed data get a path to production",
+        "detail": "A seed, fixture, or migration script that recreates or wipes data gains a route to the production database instead of an isolated one."
+      },
+      {
+        "label": "Environments share a backing store",
+        "detail": "A cache, bucket, or queue is wired so development or test and production read and write the same store, so non-production activity can affect live data."
+      }
+    ],
+    "example": {
+      "title": "An end-to-end suite pointed at the production database.",
+      "setup": "An end-to-end suite needs a database to run against. The dedicated test database is empty and the tests keep failing on missing data, so the setup is pointed at the production connection string to test against real data. The suite truncates and re-seeds tables on every run, and now it does that to production.",
+      "file": "e2e/setup.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- const TEST_DB = process.env.TEST_DATABASE_URL"
+        },
+        {
+          "kind": "add",
+          "text": "+ const TEST_DB = process.env.DATABASE_URL // prod, to test against real data"
+        },
+        {
+          "kind": "ctx",
+          "text": "await db.connect(TEST_DB)"
+        },
+        {
+          "kind": "ctx",
+          "text": "await resetAndSeed(db) // truncates tables before each run"
+        }
+      ],
+      "clause": "ISO 27001:2022 A.8.31",
+      "finding": "This points an end-to-end suite that truncates and re-seeds tables at the production database, so a test run can wipe and overwrite live data. A.8.31 expects development, test, and production to be separated so non-production activity cannot reach production. Restore the dedicated test database and load the missing fixtures there, rather than borrowing production, and keep the boundary so a test run can never write to live data."
+    },
+    "auditor": {
+      "heading": "Separation is checked at the boundary, not just claimed.",
+      "paragraph": "An auditor looks for evidence that your environments are actually separated: that test and development cannot reach production data or credentials, and that production is changed only through the controlled path. A test configuration wired to a production resource, or a lower environment holding production secrets, is the kind of gap that contradicts the separation your policy describes, and it usually arrives in a single change to a config or setup file. The diff is where the boundary is crossed, and the cheapest place to catch it."
+    },
+    "boundary": {
+      "title": "A review, not your environment topology.",
+      "paragraph": "heygrc flags changes that touch A.8.31 and cites the control so the fix happens in the pull request. It does not provision your environments or hold your secrets. It catches the moment a test or development path reaches into production, at the diff."
+    }
+  },
+  {
+    "framework": "gdpr",
+    "frameworkName": "GDPR",
+    "id": "Art. 5(1)(e)",
+    "slug": "storage-limitation",
+    "metaTitle": "GDPR storage limitation in code",
+    "metaDescription": "Storage limitation (GDPR Art. 5(1)(e)) is the data-protection duty most often broken by accident in code: personal data kept with no end of life. The shapes it takes in a pull request, a worked example of a removed retention job, and how it connects to the right to erasure.",
+    "title": "Personal data that forgot to have an end.",
+    "intro": [
+      "Storage limitation, Art. 5(1)(e), says personal data should be kept in a form that identifies people no longer than is necessary for the purpose it was collected for. It is one of the easiest duties to break without meaning to, because adding a place to store something is routine, and adding the part that deletes it later is the part everyone forgets."
+    ],
+    "shapesIntro": "The change is almost never 'keep this forever on purpose'. It is a missing half of an otherwise reasonable change. These are the shapes that recur.",
+    "shapes": [
+      {
+        "label": "A new store ships with no end of life",
+        "detail": "A migration or model adds a table, cache, or index holding personal data, and nothing sets a retention bound or an expiry, so the data simply accumulates."
+      },
+      {
+        "label": "A retention job is removed or disabled",
+        "detail": "A scheduled purge, a TTL on a cache, or a cleanup task is dropped in a refactor or commented out to fix an unrelated issue, and the data it used to age out now stays."
+      },
+      {
+        "label": "A window quietly extends",
+        "detail": "A retention period is increased (90 days becomes indefinite, or a config default changes) without a purpose or a documented reason for keeping the data longer."
+      },
+      {
+        "label": "A soft delete keeps everything",
+        "detail": "A delete is changed to a flag (a deleted_at column) so the row, and the personal data in it, is still there indefinitely, which is retention, not deletion."
+      },
+      {
+        "label": "Erasure does not reach the new copy",
+        "detail": "A new place personal data lands (an export, an analytics sink, a second database) is not wired into the delete-my-account path, so a copy survives erasure. That is also an Art. 17 problem."
+      }
+    ],
+    "example": {
+      "title": "A removed purge that keeps inactive users forever.",
+      "setup": "A scheduled job that deleted the personal data of long-inactive users is dropped, maybe it was noisy, maybe it seemed safe to keep the data. The effect is that personal data now has no defined end of life.",
+      "file": "jobs/retention.yaml",
+      "delta": "+0 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "schedules:"
+        },
+        {
+          "kind": "ctx",
+          "text": "  reconcile: { cron: \"0 2 * * *\" }"
+        },
+        {
+          "kind": "del",
+          "text": "-  purge_inactive: { cron: \"0 3 * * *\", delete: users, older_than: P2Y }"
+        }
+      ],
+      "clause": "GDPR Art. 5(1)(e)",
+      "finding": "This removes the only thing that deleted personal data for inactive users, so it is now retained with no end date. Art. 5(1)(e) (storage limitation) expects personal data to be kept no longer than the purpose needs. If the job was too aggressive or noisy, fix its schedule or scope, but keep a retention path rather than removing it entirely."
+    },
+    "auditor": {
+      "heading": "Retention is also an erasure problem.",
+      "paragraph": "Storage limitation is assessed against your records of processing and your retention schedule: data found living past its stated purpose is the gap a review looks for. It is tied to the right to erasure, Art. 17, because every place personal data is kept is a place a deletion request has to reach. A new store with no retention is usually also a store the delete-my-account path does not know about, so the two duties tend to break together, in the same pull request."
+    },
+    "boundary": {
+      "title": "A review, not legal advice.",
+      "paragraph": "heygrc flags changes that touch storage limitation and cites the article so the fix happens in the pull request. It does not set your retention periods, render a legal determination, or maintain your records of processing. It catches the change early so a retention question is answered in review rather than after an incident."
+    }
+  },
+  {
+    "framework": "gdpr",
+    "frameworkName": "GDPR",
+    "id": "Art. 17",
+    "slug": "right-to-erasure",
+    "metaTitle": "GDPR right to erasure in code",
+    "metaDescription": "The right to erasure (GDPR Art. 17) is satisfied by code: a deletion has to reach every copy of a person's personal data. The shapes it takes in a pull request, a worked example of a delete path that misses a search index, and what a review looks for.",
+    "title": "Deletion that has to reach everywhere.",
+    "intro": [
+      "The right to erasure, Art. 17, gives people the right to have their personal data deleted in defined circumstances. Where storage limitation is about how long you keep data, erasure is about whether you can actually remove it on request, and that is a property of your delete path: it works only if it reaches every place a person's data lives."
+    ],
+    "shapesIntro": "Erasure breaks when a copy of personal data sits somewhere the delete path does not reach. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A new store is not wired into deletion",
+        "detail": "A change adds a place personal data lives (a cache, a search index, a second database, an export) and the delete-my-account path is not updated to clear it, so a copy survives."
+      },
+      {
+        "label": "A delete becomes a soft delete",
+        "detail": "A real delete is changed to a flag (a deleted_at column) so the personal data is still present, which does not satisfy erasure."
+      },
+      {
+        "label": "Deletion is partial",
+        "detail": "The main record is deleted but related personal data in other tables, logs, or message queues is left behind."
+      },
+      {
+        "label": "A processor is never told to delete",
+        "detail": "Data was sent to a third-party processor, and the deletion is not propagated to them, so a downstream copy persists."
+      },
+      {
+        "label": "Erasure is not actually reachable",
+        "detail": "There is no working path to delete a given person's data at all, only a manual or ad-hoc process that does not scale and is easy to get wrong."
+      }
+    ],
+    "example": {
+      "title": "A new copy with no path to delete it.",
+      "setup": "A people-search feature adds a search index of user profiles, written on every update. It works. But the account-deletion path is not updated to clear the index, so after an erasure request the person is gone from the database and still in the index.",
+      "file": "users/index.ts",
+      "delta": "+1 -0",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "async function onUserUpdated(user: User) {"
+        },
+        {
+          "kind": "ctx",
+          "text": "  await db.users.save(user)"
+        },
+        {
+          "kind": "add",
+          "text": "+  await searchIndex.upsert({ id: user.id, name: user.name, email: user.email })"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "GDPR Art. 17",
+      "finding": "This adds a new copy of the user's profile (name, email) to a search index, but the account-deletion path does not clear it, so an erasure request will not reach it. Art. 17 (right to erasure) expects deletion to reach every store of the person's data. Update the delete-account path to remove the user from the index too, and check for any other new copy."
+    },
+    "auditor": {
+      "heading": "Erasure is tested against every copy.",
+      "paragraph": "A data-protection review checks that an erasure request actually removes a person's data everywhere it is held, not just from the primary database: caches, search indexes, backups (subject to their own accepted handling), analytics, and third-party processors. The gap is usually a store added in code without updating the delete path, which is exactly the kind of change a review of the diff can catch before it ships."
+    },
+    "boundary": {
+      "title": "A review, not your DPO.",
+      "paragraph": "heygrc flags changes that touch the right to erasure and cites the article so the fix happens in the pull request. It does not handle data-subject requests or render a legal determination. It catches the moment a new copy of personal data is added without a path to delete it, at the diff."
+    }
+  },
+  {
+    "framework": "gdpr",
+    "frameworkName": "GDPR",
+    "id": "Art. 5(1)(c)",
+    "slug": "data-minimisation",
+    "metaTitle": "GDPR data minimisation in code",
+    "metaDescription": "Data minimisation (GDPR Art. 5(1)(c)) breaks when code starts collecting or sending more personal data than the purpose needs. The shapes it takes in a pull request, a worked example of an analytics event carrying a full user object, and what a review looks for.",
+    "title": "Collecting more than the purpose needs.",
+    "intro": [
+      "Data minimisation, Art. 5(1)(c), says you should collect and keep only the personal data a purpose actually needs, and no more. In code it breaks whenever a change starts capturing, logging, or sending more personal data than the feature actually requires, which is easy to do because sending the whole object is usually less work than picking the fields you need."
+    ],
+    "shapesIntro": "Minimisation rarely breaks on purpose. It breaks because the convenient thing carries more than the necessary thing. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A payload widens to the whole object",
+        "detail": "An event, request, or message is changed to send a full user or customer object where only an id and a field or two were needed."
+      },
+      {
+        "label": "A new field captures more than needed",
+        "detail": "A form, model, or import starts collecting personal data the feature has no use for, just because it was available."
+      },
+      {
+        "label": "A log line carries personal data",
+        "detail": "A debugging log records a whole request or record, putting personal data into a log store that did not need it."
+      },
+      {
+        "label": "A third party receives more than necessary",
+        "detail": "An analytics, support, or marketing integration starts receiving fields it does not need, widening who holds the data."
+      },
+      {
+        "label": "Free-text is sent unredacted",
+        "detail": "A field that may contain personal data (a note, a message) is forwarded or stored without trimming it to what the purpose requires."
+      }
+    ],
+    "example": {
+      "title": "An analytics event that ships the whole user.",
+      "setup": "A product wants to track sign-ups in its analytics tool. The quickest call sends the entire user object as event properties, including email, name, and address, when the analytics only needs an id and a plan.",
+      "file": "analytics/track.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "analytics.track(\"signup\", {"
+        },
+        {
+          "kind": "del",
+          "text": "-  userId: user.id, plan: user.plan,"
+        },
+        {
+          "kind": "add",
+          "text": "+  ...user, // send everything, filter later"
+        },
+        {
+          "kind": "ctx",
+          "text": "})"
+        }
+      ],
+      "clause": "GDPR Art. 5(1)(c)",
+      "finding": "Spreading the whole user object sends email, name, and address to the analytics provider, more personal data than tracking a signup needs, and to a new processor. Art. 5(1)(c) (data minimisation) expects a change to carry only the personal data the purpose actually needs. Send the id and the specific fields the analytics actually uses, not the whole record."
+    },
+    "auditor": {
+      "heading": "Minimisation is checked at every flow.",
+      "paragraph": "A data-protection review looks at what personal data each processing activity collects and sends, and compares it to the stated purpose: anything beyond what is necessary is the finding. New data flows to third parties get particular attention, because they widen who holds the data and can raise transfer questions too. These flows are created in code, one integration or event at a time, which is where the minimisation decision is actually made."
+    },
+    "boundary": {
+      "title": "A review, not legal advice.",
+      "paragraph": "heygrc flags changes that touch data minimisation and cites the article so the fix happens in the pull request. It does not decide your lawful basis or maintain your records of processing. It catches the moment a change starts carrying more personal data than it needs, at the diff."
+    }
+  },
+  {
+    "framework": "gdpr",
+    "frameworkName": "GDPR",
+    "id": "Art. 25",
+    "slug": "data-protection-by-design",
+    "metaTitle": "GDPR data protection by design and by default in code",
+    "metaDescription": "Data protection by design and by default (GDPR Art. 25) is decided in code: the default setting a new feature ships with is the default for everyone. The shapes it takes in a pull request, a worked example of a profile that ships public by default, and what a review looks for.",
+    "title": "The default setting is the one everyone gets.",
+    "intro": [
+      "Data protection by design and by default, Art. 25, has two halves. By design: privacy is built into how a feature works, not bolted on later. By default: without anyone touching a setting, the system processes only the personal data the purpose needs, and does not make a person's data accessible to more people than necessary. The second half is the one that lives in a diff, because a default is a literal value in code, and whatever it is becomes the setting for every user who never opens the settings page."
+    ],
+    "shapesIntro": "Art. 25 rarely breaks with a setting nobody offers. It breaks because the default value of a setting points the wrong way, or processing starts wider than it needs to. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A visibility default ships open",
+        "detail": "A new profile, post, or document field defaults to public, shared, or discoverable, so a person's data is exposed to an indefinite audience unless they find the toggle and change it."
+      },
+      {
+        "label": "An opt-out where it should be opt-in",
+        "detail": "A consent flag, a marketing setting, or a data-sharing option defaults to on, so processing happens for everyone who does not actively turn it off."
+      },
+      {
+        "label": "A broad scope is the default selection",
+        "detail": "A new feature defaults to the widest data scope (all contacts, the whole org, every field) where the narrow one would have served the purpose."
+      },
+      {
+        "label": "A privacy control is added but defaults off",
+        "detail": "A redaction, an audience limit, or a retention bound is built (by design) but ships disabled by default, so the protection exists only for users who enable it."
+      },
+      {
+        "label": "A safer default is loosened to help adoption",
+        "detail": "An existing private-by-default value is flipped to public or shared to make a feature feel more useful, widening exposure for everyone at once."
+      }
+    ],
+    "example": {
+      "title": "A profiles feature that ships public by default.",
+      "setup": "A new public-profiles feature lets people show a name, bio, and photo. The migration that adds the visibility column defaults it to 'public', so every existing and new user's profile is visible to anyone, and being private is something you have to go into settings to choose.",
+      "file": "migrations/0042_add_profiles.sql",
+      "delta": "+1 -0",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "ALTER TABLE profiles"
+        },
+        {
+          "kind": "ctx",
+          "text": "  ADD COLUMN bio text,"
+        },
+        {
+          "kind": "add",
+          "text": "+  ADD COLUMN visibility text NOT NULL DEFAULT 'public';"
+        }
+      ],
+      "clause": "GDPR Art. 25(2)",
+      "finding": "This makes every profile visible to an indefinite audience without the person choosing it, because 'public' is the default. Art. 25(2) (data protection by default) expects the privacy-protective option to be the default: a person's data should not be made accessible to more people than necessary without their intervention. Default the column to 'private' and let users opt in to public, rather than making them opt out."
+    },
+    "auditor": {
+      "heading": "By default means the value in the code.",
+      "paragraph": "A data-protection review does not just check that a privacy setting exists, it checks what it does when nobody touches it. The standard is the default state: what data is processed, and who can see it, for a user who never opens a settings page. A control that is technically present but defaults to the less protective option is the kind of default-state gap Art. 25(2) is aimed at, and the default is set in a migration, a model, or a config line, one feature at a time. That is the line a review of the diff can catch, before it becomes the experience every user got."
+    },
+    "boundary": {
+      "title": "A review, not legal advice.",
+      "paragraph": "heygrc flags changes where a default exposes more personal data than necessary and cites the article so the choice is made in the pull request. It does not run your data-protection impact assessment or render a legal determination. It catches the moment a default points the wrong way, at the diff, while it is still one line to change."
+    }
+  },
+  {
+    "framework": "eu-ai-act",
+    "frameworkName": "EU AI Act",
+    "id": "Art. 12",
+    "slug": "record-keeping",
+    "metaTitle": "EU AI Act record-keeping in code",
+    "metaDescription": "Record-keeping (EU AI Act Art. 12) requires high-risk AI systems to automatically log their events over their lifetime. The shapes it takes in a pull request, a worked example of inference logging being removed, and what a conformity review checks.",
+    "title": "An AI system that has to keep records.",
+    "intro": [
+      "Article 12 requires high-risk AI systems to allow the automatic recording of events (logs) over their lifetime, so their operation can be traced and reviewed. It is the traceability backbone of the high-risk regime: it is what lets you reconstruct what a system did, supports post-market monitoring, and underpins an investigation. And it is code, an event is logged because something in the system logs it."
+    ],
+    "shapesIntro": "Record-keeping weakens when a change reduces what a high-risk AI system records about its own operation. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "Inference logging is removed",
+        "detail": "The call that records each decision (the inputs, the output, the model version) is deleted in a cleanup, so the system stops producing the trace Art. 12 expects."
+      },
+      {
+        "label": "Key fields are dropped from the record",
+        "detail": "Logging stays but stops capturing what is needed to reconstruct a decision (which version ran, what it was given), so the record exists but is not traceable."
+      },
+      {
+        "label": "A new high-risk path ships unlogged",
+        "detail": "A new model, route, or decision path is added with no event logging, leaving part of the system's operation unrecorded."
+      },
+      {
+        "label": "Logging stops covering the system's operation",
+        "detail": "The automatic logging is narrowed so it no longer captures events across the system's operation, leaving gaps in the traceability Art. 12 is meant to enable."
+      },
+      {
+        "label": "Log integrity is weakened",
+        "detail": "The event log becomes editable or is moved somewhere it can be changed, undermining its value as a faithful record."
+      }
+    ],
+    "example": {
+      "title": "Inference logging removed to cut cost.",
+      "setup": "A high-risk scoring model logs every decision it makes. The volume is expensive, so a change drops the logging call. The model keeps scoring; it just stops keeping any record of what it decided or on what input.",
+      "file": "model/score.ts",
+      "delta": "+0 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "const result = await model.score(application)"
+        },
+        {
+          "kind": "del",
+          "text": "-  await events.record({ model: model.version, input: application.id, result })"
+        },
+        {
+          "kind": "ctx",
+          "text": "  return result"
+        }
+      ],
+      "clause": "EU AI Act Art. 12",
+      "finding": "This removes the record of what the high-risk system decided and on what input. Art. 12 (record-keeping) expects automatic logging of the system's events over its lifetime, so its operation can be traced. If the cost is the issue, reduce what is logged or its retention tier, but keep a traceable record rather than removing it. Whether a system is high-risk and in scope is for your own assessment."
+    },
+    "auditor": {
+      "heading": "Record-keeping is checked as traceability.",
+      "paragraph": "Conformity for a high-risk system looks for the technical documentation and the logging that make its operation traceable: can you show what the system did, on what input, with which version, across its lifetime. A change that removed or hollowed out that logging is the gap behind that traceability, and it is visible in the diff to the inference or event-logging path."
+    },
+    "boundary": {
+      "title": "A review, not a conformity assessment.",
+      "paragraph": "heygrc flags changes that touch Art. 12 and cites the article so the fix happens in the pull request. It does not classify your system's risk tier or run your conformity assessment. It catches the moment a high-risk system stops recording its operation, at the diff."
+    }
+  },
+  {
+    "framework": "eu-ai-act",
+    "frameworkName": "EU AI Act",
+    "id": "Art. 10",
+    "slug": "data-governance",
+    "metaTitle": "EU AI Act data governance in code",
+    "metaDescription": "Data governance (EU AI Act Art. 10) requires the training, validation, and testing data for a high-risk AI system to be governed and examined for quality and bias. The shapes it takes in a pull request, a worked example of a dropped dataset validation step, and what a conformity review checks.",
+    "title": "The data a model learns from, governed.",
+    "intro": [
+      "Article 10 requires that the training, validation, and testing data sets behind a high-risk AI system are subject to data-governance practices: examined for relevance, representativeness, gaps, and possible biases. A model is shaped by the data it learns from, and that data is handled in code, in the pipeline that validates and prepares it before training."
+    ],
+    "shapesIntro": "Data governance weakens when a change lets a model train on data that has not been examined. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A dataset validation step is removed",
+        "detail": "A check on the training data (schema, missing values, basic quality) is dropped to speed things up, so the model trains on whatever the data happens to contain."
+      },
+      {
+        "label": "A bias or representativeness check is skipped",
+        "detail": "A step that examined the data for gaps or skew across the groups it affects is removed, so a known class of bias goes unexamined."
+      },
+      {
+        "label": "Provenance is dropped",
+        "detail": "The record of where training data came from is no longer captured, so the data behind a model can no longer be traced or governed."
+      },
+      {
+        "label": "A new data source is added ungoverned",
+        "detail": "A new source is folded into training with none of the governance applied to the existing ones."
+      },
+      {
+        "label": "Filtering of bad records is removed",
+        "detail": "Deduplication or removal of corrupt or out-of-scope records is taken out, degrading the quality of what the model learns from."
+      }
+    ],
+    "example": {
+      "title": "A dataset validation step, dropped before training.",
+      "setup": "A retraining pipeline runs a validation step (schema, missing values, basic representativeness checks) before it trains. To speed up an experiment the validation is removed, and the model now trains on whatever the dataset happens to contain.",
+      "file": "ml/retrain.ts",
+      "delta": "+0 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "async function retrain(dataset) {"
+        },
+        {
+          "kind": "del",
+          "text": "-  await validateDataset(dataset) // schema, gaps, representativeness"
+        },
+        {
+          "kind": "ctx",
+          "text": "  const model = await train(dataset)"
+        },
+        {
+          "kind": "ctx",
+          "text": "  return model"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "EU AI Act Art. 10",
+      "finding": "Removing the validation means the high-risk system can train on data that has not been examined for quality, gaps, or bias, which Art. 10 (data governance) expects for training, validation, and testing sets. Keep the validation step. Whether a system is high-risk and in scope is for your own assessment."
+    },
+    "auditor": {
+      "heading": "Data governance is checked at the pipeline, and the documentation.",
+      "paragraph": "Conformity for a high-risk system looks at how its data was governed: that training, validation, and testing data was examined for quality, representativeness, and bias, and that this is documented. A change that removed a validation or bias check, or folded in an ungoverned source, is the concrete gap behind that, and it shows up in the diff to the data pipeline."
+    },
+    "boundary": {
+      "title": "A review, not a data-governance program.",
+      "paragraph": "heygrc flags changes that touch Art. 10 and cites the article so the fix happens in the pull request. It does not assess your datasets for bias or run your governance process. It catches the moment a change lets a high-risk system train on ungoverned data, at the diff."
+    }
+  },
+  {
+    "framework": "dora",
+    "frameworkName": "DORA",
+    "id": "Art. 11",
+    "slug": "response-and-recovery",
+    "metaTitle": "DORA response and recovery in code",
+    "metaDescription": "DORA Art. 11 (response and recovery) makes operational resilience a duty for EU financial entities, and much of it is decided in code. The shapes it takes in a pull request, a worked example of a circuit breaker removed from a critical call, and what supervision checks.",
+    "title": "Operational resilience, one removed safeguard at a time.",
+    "intro": [
+      "DORA's Art. 11 (response and recovery) is about keeping critical functions running through a disruption and recovering from one: business-continuity and response measures for ICT-related incidents. For a financial entity a lot of that resilience is built in code, the retries, circuit breakers, failovers, and timeouts that stop one component's failure from taking down a critical service. Each of those is a pull-request decision."
+    ],
+    "shapesIntro": "Resilience is rarely lost in one dramatic change. It erodes when a safeguard that contained failure is removed because it seemed redundant. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A circuit breaker is removed",
+        "detail": "A breaker that isolated a failing dependency is dropped, so a downstream failure now cascades into the critical service instead of being contained."
+      },
+      {
+        "label": "A retry or backoff is removed",
+        "detail": "Retry-with-backoff around a flaky call is removed, so a transient blip becomes a hard failure that reaches the user."
+      },
+      {
+        "label": "A failover or redundancy path is removed",
+        "detail": "A fallback to a secondary instance, region, or provider is dropped, leaving no path when the primary fails."
+      },
+      {
+        "label": "Graceful degradation is removed",
+        "detail": "A path that let the service degrade (serve cached or reduced functionality) is replaced by a hard failure of the whole function."
+      },
+      {
+        "label": "A timeout is removed",
+        "detail": "A timeout on a call to a dependency is removed, so a hung dependency can block threads and stall the whole service."
+      }
+    ],
+    "example": {
+      "title": "A circuit breaker removed from a critical call.",
+      "setup": "A payment-status service calls a downstream provider. A circuit breaker around that call kept the service responsive when the provider was slow. A refactor removes the breaker because it 'never trips'. Now, when the provider degrades, the calls pile up and the critical service stalls with it.",
+      "file": "payments/status.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- const provider = withCircuitBreaker(rawProvider, { failureThreshold: 5 })"
+        },
+        {
+          "kind": "add",
+          "text": "+ const provider = rawProvider"
+        },
+        {
+          "kind": "ctx",
+          "text": "const status = await provider.getStatus(paymentId)"
+        }
+      ],
+      "clause": "DORA Art. 11",
+      "finding": "Removing the circuit breaker means a slow or failing provider can stall the critical payment-status function instead of being isolated. Art. 11 (response and recovery) expects measures that keep critical functions resilient through a disruption. Keep the breaker (and its fallback), and if it never trips, that is the breaker doing its job, not a reason to remove it."
+    },
+    "auditor": {
+      "heading": "Resilience is something you have to be able to demonstrate.",
+      "paragraph": "DORA expects a financial entity to be able to show its operational resilience: continuity measures, the ability to respond to and recover from ICT incidents, and testing of all of that. A change that quietly removed a circuit breaker, a failover, or a timeout thins out that resilience, and it is visible in the diff. Catching it in review keeps the resilience you can demonstrate matching the resilience you actually have."
+    },
+    "boundary": {
+      "title": "A review, not a resilience programme.",
+      "paragraph": "heygrc flags changes that touch a DORA obligation and cites the article so the fix happens in the pull request. It does not run your ICT risk management framework or your resilience testing. It catches the moment a safeguard that kept a critical function resilient is removed, at the diff."
+    }
+  },
+  {
+    "framework": "dora",
+    "frameworkName": "DORA",
+    "id": "Art. 9",
+    "slug": "protection-and-prevention",
+    "metaTitle": "DORA protection and prevention in code",
+    "metaDescription": "DORA Art. 9 (protection and prevention) expects financial entities to protect their ICT systems, including by segmenting and isolating critical functions. The shapes it takes in a pull request, a worked example of flattened network segmentation, and what supervision checks.",
+    "title": "Keeping the critical system walled off.",
+    "intro": [
+      "DORA's Art. 9 (protection and prevention) is about protecting the security of ICT systems and minimising the impact of ICT risk, including by segmenting and isolating systems so that a problem in one place does not spread to a critical function. For a financial entity that isolation is built in code and configuration: the network boundaries, firewall rules, and security groups that keep a payments or core system walled off."
+    ],
+    "shapesIntro": "Protection erodes when a change flattens a boundary that was keeping a critical system isolated. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "Segmentation between zones is flattened",
+        "detail": "A boundary that separated a critical financial system from the general network is opened up, so a compromise elsewhere can now reach it."
+      },
+      {
+        "label": "A protective deny rule is widened",
+        "detail": "A firewall or security-group rule that allowed only a narrow source is broadened to a whole subnet or VPC, removing the isolation it provided."
+      },
+      {
+        "label": "A critical function becomes broadly reachable",
+        "detail": "A core system is made directly reachable from a wide zone rather than a specific, vetted source."
+      },
+      {
+        "label": "Egress controls are dropped",
+        "detail": "Restrictions on what a critical system can reach out to are removed, so a compromised component can call out freely."
+      },
+      {
+        "label": "An isolation mechanism is removed",
+        "detail": "A control that would have contained an incident (a separate subnet, a bastion, a deny-by-default boundary) is taken out for convenience."
+      }
+    ],
+    "example": {
+      "title": "A payments subnet opened to the whole VPC.",
+      "setup": "A payments service runs in a segmented subnet reachable only from a narrow gateway. To make a new internal integration work quickly, a change opens the subnet to the entire VPC. The integration works, and the isolation that contained a compromise to one zone is gone.",
+      "file": "infra/payments_sg.tf",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "ingress {"
+        },
+        {
+          "kind": "ctx",
+          "text": "  from_port = 443"
+        },
+        {
+          "kind": "del",
+          "text": "-  security_groups = [aws_security_group.payments_gateway.id]"
+        },
+        {
+          "kind": "add",
+          "text": "+  cidr_blocks = [\"10.0.0.0/16\"] # the whole VPC"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "DORA Art. 9",
+      "finding": "Opening the payments subnet to the entire VPC removes the segmentation that kept the critical system isolated, so a compromise anywhere in the network can now reach it. Art. 9 (protection and prevention) expects measures like segmentation to protect ICT systems. Scope the rule to the specific gateway that needs access."
+    },
+    "auditor": {
+      "heading": "Protection is checked against how critical systems are isolated.",
+      "paragraph": "Supervision under DORA looks at how a financial entity protects and isolates its ICT systems, especially the ones supporting critical functions: segmentation, access boundaries, and the controls that would contain an incident. A change that flattened a boundary or widened a protective rule is the concrete weakening of that, and it is visible in the diff to the network or infrastructure config."
+    },
+    "boundary": {
+      "title": "A review, not your network architecture.",
+      "paragraph": "heygrc flags changes that touch a DORA protection obligation and cites the article so the fix happens in the pull request. It does not design your network or run your segmentation. It catches the moment a change flattens a boundary that kept a critical system isolated, at the diff."
+    }
+  },
+  {
+    "framework": "nis-2",
+    "frameworkName": "NIS 2",
+    "id": "Art. 21(2)(d)",
+    "slug": "supply-chain-security",
+    "metaTitle": "NIS 2 supply chain security in code",
+    "metaDescription": "Supply-chain security (NIS 2 Art. 21(2)(d)) is decided by how you pull in third-party code. The shapes it takes in a pull request, a worked example of piping a remote script to a shell at build time, and what an inspection checks.",
+    "title": "The supply chain runs through your build.",
+    "intro": [
+      "NIS 2's Art. 21(2) lists the cybersecurity risk-management measures in-scope entities must take, and point (d) is supply-chain security: managing the security risks in the relationships with your suppliers and the components you depend on. For most teams the supply chain is concrete and lives in code: the dependencies you install, the versions you pin, and the scripts you trust at build time."
+    ],
+    "shapesIntro": "Supply-chain security weakens whenever a change pulls in third-party code with less verification than before. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A remote script is piped to a shell",
+        "detail": "A build or setup step fetches a script from the internet and runs it directly (curl piped to bash), executing unverified remote code with whatever privileges the build has."
+      },
+      {
+        "label": "A dependency is unpinned",
+        "detail": "A pinned version is changed to a floating range or a moving tag (latest, a branch), so a future, unverified version can be pulled in silently."
+      },
+      {
+        "label": "An integrity check is removed",
+        "detail": "A lockfile, checksum, or signature verification that ensured you got the expected artifact is removed or bypassed to make an install work."
+      },
+      {
+        "label": "A new component arrives with no provenance",
+        "detail": "A dependency or image is added from an unvetted source, with no record of where it came from or who maintains it."
+      },
+      {
+        "label": "An internal mirror or allowlist is bypassed",
+        "detail": "A change pulls a package directly from upstream instead of the vetted internal mirror or registry, sidestepping the controls on it."
+      }
+    ],
+    "example": {
+      "title": "A build step that runs a remote script.",
+      "setup": "A Dockerfile needs a CLI tool. The quickest install is the vendor's one-liner that downloads and runs a script. It works, and it means every build executes whatever is at that URL, unpinned and unverified, with the build's privileges.",
+      "file": "Dockerfile",
+      "delta": "+1 -0",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "FROM node:22-slim"
+        },
+        {
+          "kind": "add",
+          "text": "+ RUN curl -fsSL https://get.example-tool.dev/install.sh | bash"
+        },
+        {
+          "kind": "ctx",
+          "text": "COPY . /app"
+        }
+      ],
+      "clause": "NIS 2 Art. 21(2)(d)",
+      "finding": "Piping a remote script to a shell runs unverified third-party code at build time, and what that URL serves can change without you knowing. Art. 21(2)(d) (supply chain security) expects the risks in your dependencies and suppliers to be managed. Pin the tool to a specific version and verify it (a checksum or a known package), rather than executing whatever the URL returns today."
+    },
+    "auditor": {
+      "heading": "Supply-chain risk is assessed at the dependencies you actually pull.",
+      "paragraph": "An inspection under NIS 2 looks at how an entity manages the security of its suppliers and the components it relies on: are dependencies vetted, pinned, and tracked, and are build inputs trusted. A change that introduced an unpinned dependency or ran a remote script at build is the concrete supply-chain risk behind that, and it is visible in the diff to the manifest, lockfile, or build config."
+    },
+    "boundary": {
+      "title": "A review, not a full supply-chain programme.",
+      "paragraph": "heygrc flags changes that touch a NIS 2 measure and cites the point so the fix happens in the pull request. It does not run your software-composition analysis or your supplier risk assessments. It catches the moment a change pulls in third-party code with less verification, at the diff."
+    }
+  },
+  {
+    "framework": "nis-2",
+    "frameworkName": "NIS 2",
+    "id": "Art. 21(2)(g)",
+    "slug": "cyber-hygiene-patching",
+    "metaTitle": "NIS 2 cyber hygiene and patching in code",
+    "metaDescription": "Basic cyber hygiene (NIS 2 Art. 21(2)(g)) includes keeping software patched against known vulnerabilities. The shapes it takes in a pull request, a worked example of a dependency held back from its security fix, and what an inspection checks.",
+    "title": "Known vulnerabilities, left unpatched.",
+    "intro": [
+      "NIS 2's Art. 21(2)(g) lists basic cyber-hygiene practices among the required measures, and one of the most basic is keeping software up to date against known vulnerabilities. When a fix exists for a published advisory and you do not take it, you are running a known hole on purpose. That decision is usually made in a manifest or a base image, in code."
+    ],
+    "shapesIntro": "Cyber hygiene erodes when a change leaves a known, fixable vulnerability in place. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A dependency is held back from its fix",
+        "detail": "A library with a published advisory is pinned to the affected version rather than updated to the patched one, to avoid retesting."
+      },
+      {
+        "label": "A base image is frozen and unmaintained",
+        "detail": "A base image is pinned to an old tag that no longer receives security updates, so its known vulnerabilities accumulate."
+      },
+      {
+        "label": "An automated update mechanism is disabled",
+        "detail": "Dependency or image update automation is turned off or its pull requests routinely closed, so fixes stop landing."
+      },
+      {
+        "label": "A security patch is reverted",
+        "detail": "An update that closed a vulnerability is rolled back because it caused friction, reopening the hole."
+      },
+      {
+        "label": "End-of-life software is kept in place",
+        "detail": "A runtime or library past end of life, which no longer gets fixes at all, is retained instead of migrated."
+      }
+    ],
+    "example": {
+      "title": "A dependency pinned back to a version with a known advisory.",
+      "setup": "A library has a published security advisory with a fixed version available. Taking the fix would mean retesting an integration, so a change pins it back to the affected version. The app keeps working, on a version with a known, unpatched vulnerability.",
+      "file": "package.json",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "  \"dependencies\": {"
+        },
+        {
+          "kind": "del",
+          "text": "-    \"image-parser\": \"1.4.2\""
+        },
+        {
+          "kind": "add",
+          "text": "+    \"image-parser\": \"1.3.0\""
+        },
+        {
+          "kind": "ctx",
+          "text": "  }"
+        }
+      ],
+      "clause": "NIS 2 Art. 21(2)(g)",
+      "finding": "Pinning image-parser back to 1.3.0 keeps a version with a known, published advisory when a fixed release (1.4.2) is available. Art. 21(2)(g) (basic cyber-hygiene practices) includes keeping software patched against known vulnerabilities. Take the patched version and retest, rather than holding the affected one."
+    },
+    "auditor": {
+      "heading": "Cyber hygiene is checked against what you are still running.",
+      "paragraph": "An inspection under NIS 2 looks for evidence of basic hygiene: that known vulnerabilities are tracked and patched in a reasonable time, and that software is kept supported. A change that pinned a dependency back to a vulnerable version, froze an unmaintained base image, or disabled update automation is the concrete lapse behind that, and it is visible in the diff to the manifest, lockfile, or image."
+    },
+    "boundary": {
+      "title": "A review, not a vulnerability scanner.",
+      "paragraph": "heygrc flags changes that touch a NIS 2 hygiene measure and cites the point so the fix happens in the pull request. It does not run your vulnerability scanning or your patch pipeline. It catches the moment a change leaves a known, fixable vulnerability in place, at the diff."
+    }
+  },
+  {
+    "framework": "pci-dss",
+    "frameworkName": "PCI DSS",
+    "id": "Req 3",
+    "slug": "protect-stored-account-data",
+    "metaTitle": "PCI DSS Req 3 in code",
+    "metaDescription": "PCI DSS Requirement 3 protects stored account data, and one rule is absolute: sensitive authentication data like the card verification code must never be stored after authorization. The shapes it takes in a pull request, a worked example of persisting the CVV, and what an assessor checks.",
+    "title": "The card data you must not store.",
+    "intro": [
+      "Requirement 3 is about protecting stored account data, and it draws a hard line. The primary account number, where you do store it, must be rendered unreadable. And sensitive authentication data, the card verification code (the three or four digits), the full magnetic-stripe or chip data, and the PIN, must not be stored after a payment is authorized. For the payment-acceptance flows most applications build, treat that as: you do not keep it, even encrypted. (Card issuers have narrow, controlled exceptions; most teams are not issuers.) The distinction is decided in code, in what your handlers persist."
+    ],
+    "shapesIntro": "Requirement 3 breaks when a change stores account data it should not, or stores it in the clear. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "Sensitive authentication data is stored",
+        "detail": "The card verification code, full track data, or PIN is written to a database, cache, or queue after authorization, which a payment-acceptance flow must not do, even encrypted."
+      },
+      {
+        "label": "A PAN is stored without being unreadable",
+        "detail": "A primary account number is persisted with no encryption, truncation, or tokenisation, so it sits readable at rest."
+      },
+      {
+        "label": "Account data lands in a new store",
+        "detail": "Card data starts being written to a place not built to protect it (a log, an analytics event, a debug table), pulling that store into scope."
+      },
+      {
+        "label": "A masking or tokenisation step is removed",
+        "detail": "A step that truncated or tokenised the PAN before storage is dropped, so the full number is now retained."
+      },
+      {
+        "label": "Card data is kept longer than needed",
+        "detail": "A retention or purge that limited how long account data was held is removed, so it accumulates beyond its business need."
+      }
+    ],
+    "example": {
+      "title": "Saving the card verification code for retries.",
+      "setup": "A payment occasionally needs a retry, and it would be convenient to re-submit the original details. So a change saves the whole payment payload, including the card verification code, to the orders table. It makes retries easy, and it stores data that must never be kept after authorization.",
+      "file": "checkout/orders.ts",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "del",
+          "text": "- await orders.insert({ id, amount, last4: card.last4 })"
+        },
+        {
+          "kind": "add",
+          "text": "+ await orders.insert({ id, amount, card }) // full card incl. cvc"
+        },
+        {
+          "kind": "ctx",
+          "text": "return order"
+        }
+      ],
+      "clause": "PCI DSS Req 3",
+      "finding": "Persisting the full card object stores the card verification code after authorization, which Requirement 3 prohibits for a payment-acceptance flow, even if the column is encrypted. Store only what you are allowed to keep (here, the last four digits and a token from your processor), not the verification code, full track, or PIN."
+    },
+    "auditor": {
+      "heading": "Stored account data is searched for, not just asked about.",
+      "paragraph": "A PCI assessment looks at what account data is actually stored and where: it checks that sensitive authentication data is not retained after authorization and that any stored PAN is unreadable. A change that began persisting the verification code or an unmasked PAN is exactly the finding that surfaces, and it pulls whatever store it touched into scope. The diff to the handler is the cheapest place to catch it."
+    },
+    "boundary": {
+      "title": "A review, not a QSA.",
+      "paragraph": "heygrc flags changes that touch Requirement 3 and cites the requirement so the fix happens in the pull request. It does not perform your assessment or complete your Self-Assessment Questionnaire. It catches the moment a change stores account data it should not, at the diff."
+    }
+  },
+  {
+    "framework": "pci-dss",
+    "frameworkName": "PCI DSS",
+    "id": "Req 8",
+    "slug": "authenticate-access",
+    "metaTitle": "PCI DSS Req 8 in code",
+    "metaDescription": "PCI DSS Requirement 8 is about identifying users and authenticating access, including multi-factor authentication into the cardholder data environment. The shapes it takes in a pull request, a worked example of an MFA check removed from admin access, and what an assessor checks.",
+    "title": "Knowing who, and proving it.",
+    "intro": [
+      "Requirement 8 is about identifying users and authenticating access: every user has a unique ID, access is authenticated, and multi-factor authentication is required for access into the cardholder data environment. The point is that you can tie an action to a person and that a stolen password alone is not enough to get in. Much of it is decided in your auth code and config."
+    ],
+    "shapesIntro": "Requirement 8 weakens when a change makes it easier to get in, or harder to attribute who did. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "MFA is removed or made optional",
+        "detail": "A multi-factor check on access into the cardholder data environment is dropped or gated behind a flag, so a password alone is enough again."
+      },
+      {
+        "label": "A shared or generic account appears",
+        "detail": "A shared login or generic service account is introduced where individual identification is required, so actions can no longer be tied to a person."
+      },
+      {
+        "label": "Strong auth is weakened",
+        "detail": "A path that required multi-factor or strong authentication is changed to accept a password only, or a weaker factor."
+      },
+      {
+        "label": "An auth step is bypassed",
+        "detail": "A code path (an internal route, an automation, a debug shortcut) reaches sensitive functionality without going through authentication."
+      },
+      {
+        "label": "Default or static credentials are left in",
+        "detail": "A default, hardcoded, or never-rotated credential stays in place, which is an unauthenticated door in practice."
+      }
+    ],
+    "example": {
+      "title": "MFA removed from admin access.",
+      "setup": "The multi-factor step is slowing down admins, so a change removes the second-factor check on the admin login that reaches the systems handling cardholder data. Logins get faster, and now a password alone gets an admin into the cardholder data environment.",
+      "file": "auth/admin.ts",
+      "delta": "+0 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "async function adminLogin(user, password, otp) {"
+        },
+        {
+          "kind": "ctx",
+          "text": "  if (!verifyPassword(user, password)) return deny()"
+        },
+        {
+          "kind": "del",
+          "text": "-  if (!verifyOtp(user, otp)) return deny()"
+        },
+        {
+          "kind": "ctx",
+          "text": "  return grantAdmin(user)"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "PCI DSS Req 8",
+      "finding": "Removing the second-factor check means admin access into the cardholder data environment now needs only a password, which Requirement 8 expects multi-factor authentication to protect. Keep the factor; if it is too slow, improve the second-factor experience rather than dropping it."
+    },
+    "auditor": {
+      "heading": "Authentication is checked at the access paths that matter.",
+      "paragraph": "A PCI assessment looks at how access is identified and authenticated, especially into the cardholder data environment: unique IDs, multi-factor where required, no shared accounts, no default credentials. A change that removed an MFA check, added a shared account, or bypassed authentication is the concrete gap behind that, and it is visible in the diff to the auth code or policy."
+    },
+    "boundary": {
+      "title": "A review, not your identity provider.",
+      "paragraph": "heygrc flags changes that touch Requirement 8 and cites the requirement so the fix happens in the pull request. It does not run your authentication or manage your identities. It catches the moment a change weakens how access is authenticated, at the diff."
+    }
+  },
+  {
+    "framework": "hipaa",
+    "frameworkName": "HIPAA",
+    "id": "164.312(a)(2)(iv)",
+    "slug": "encryption-of-ephi",
+    "metaTitle": "HIPAA encryption of ePHI in code",
+    "metaDescription": "Encryption (HIPAA 164.312(a)(2)(iv)) is the addressable specification for protecting electronic protected health information at rest. The shapes it takes in a pull request, a worked example of a patient-records store losing its encryption-at-rest config, and what an auditor checks.",
+    "title": "ePHI that should be encrypted at rest.",
+    "intro": [
+      "164.312(a)(2)(iv) (encryption and decryption) is the HIPAA Security Rule's addressable specification for encrypting electronic protected health information (ePHI). Addressable means you implement it where it is reasonable and appropriate, or document why not and put an equivalent safeguard in place. In practice, for most systems holding ePHI, that means encryption at rest, and it is decided by how your stores are provisioned in code."
+    ],
+    "shapesIntro": "Encryption at rest weakens when a store of ePHI ships, or is changed, without it. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A new ePHI store has no encryption",
+        "detail": "A database, bucket, or volume that will hold ePHI is provisioned with encryption at rest off and no documented alternative safeguard."
+      },
+      {
+        "label": "An encryption config is removed",
+        "detail": "A server-side encryption or key configuration on an ePHI store is deleted in a cleanup, on the assumption the default is fine."
+      },
+      {
+        "label": "ePHI lands somewhere unprotected",
+        "detail": "ePHI starts being written to a cache, log, temp file, or export that is not encrypted, spreading it into an unprotected store."
+      },
+      {
+        "label": "A backup or export is unencrypted",
+        "detail": "A backup or data export of ePHI is created with no encryption, so a copy sits unprotected outside the main store."
+      },
+      {
+        "label": "Key handling makes the encryption ineffective",
+        "detail": "Encryption is nominally on but the key is mishandled (hardcoded, shared too widely), so the protection it is supposed to provide does not hold."
+      }
+    ],
+    "example": {
+      "title": "Encryption at rest, turned off on a patient database.",
+      "setup": "A Postgres database holds patient records. To simplify a restore from an unencrypted snapshot, a change flips the instance to storage_encrypted = false. The restore gets easier, and the patient records now sit unencrypted at rest (an RDS instance is not encrypted by default).",
+      "file": "infra/database.tf",
+      "delta": "+1 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "resource \"aws_db_instance\" \"patient_records\" {"
+        },
+        {
+          "kind": "ctx",
+          "text": "  engine = \"postgres\""
+        },
+        {
+          "kind": "del",
+          "text": "-  storage_encrypted = true"
+        },
+        {
+          "kind": "add",
+          "text": "+  storage_encrypted = false"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "HIPAA 164.312(a)(2)(iv)",
+      "finding": "This turns off encryption at rest on a database holding patient records (ePHI). 164.312(a)(2)(iv) is the addressable specification for encrypting ePHI, so disabling it without a documented equivalent safeguard leaves ePHI unencrypted at rest. Keep storage_encrypted on, or document why an equivalent measure is in place."
+    },
+    "auditor": {
+      "heading": "Encryption of ePHI is checked at the store, and at the decision.",
+      "paragraph": "A HIPAA review checks how ePHI is protected at rest: whether stores are encrypted, and, because the specification is addressable, whether any decision not to encrypt was assessed and documented with an equivalent safeguard. A change that turned encryption off, or stood up an ePHI store without it, is the gap behind that, and it is visible in the diff to the infrastructure or storage config."
+    },
+    "boundary": {
+      "title": "A review, not a HIPAA program.",
+      "paragraph": "heygrc flags changes that touch a HIPAA technical safeguard and cites the CFR reference so the fix happens in the pull request. It does not perform your risk analysis or document your addressable-specification decisions. It catches the moment a store of ePHI loses, or never had, encryption at rest, at the diff."
+    }
+  },
+  {
+    "framework": "hipaa",
+    "frameworkName": "HIPAA",
+    "id": "164.312(c)(1)",
+    "slug": "integrity-of-ephi",
+    "metaTitle": "HIPAA integrity of ePHI in code",
+    "metaDescription": "Integrity (HIPAA 164.312(c)(1)) is about protecting electronic protected health information from improper alteration or destruction. The shapes it takes in a pull request, a worked example of a removed record integrity check, and what an auditor looks for.",
+    "title": "Patient data that has not been quietly changed.",
+    "intro": [
+      "164.312(c)(1) is the HIPAA Security Rule's integrity standard: protect electronic protected health information from improper alteration or destruction. A common way to meet it (the addressable mechanism at 164.312(c)(2)) is to verify that a record has not been altered, with a hash or a signature. That verification lives in the code that reads and writes patient data."
+    ],
+    "shapesIntro": "Integrity weakens when a change makes it possible for ePHI to be altered or destroyed without it being caught. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A record integrity check is removed",
+        "detail": "A hash, checksum, or signature verification that detected tampering or corruption on a patient record is dropped, so an altered record is served as if intact."
+      },
+      {
+        "label": "A destructive write replaces a safe update",
+        "detail": "A guarded update is changed to an overwrite or hard delete that destroys the prior record with no recovery or trail."
+      },
+      {
+        "label": "A guard against improper deletion is removed",
+        "detail": "A safeguard that prevented records from being deleted improperly is taken out, so data can be destroyed when it should not be."
+      },
+      {
+        "label": "Write validation is dropped",
+        "detail": "Validation on a write is removed, so malformed or corrupt ePHI can be persisted and later read as truth."
+      },
+      {
+        "label": "A record store becomes freely editable",
+        "detail": "A tamper-evident or append-only constraint is loosened, so records can be changed without leaving a trace."
+      }
+    ],
+    "example": {
+      "title": "A record integrity check, removed to speed up reads.",
+      "setup": "Patient records are stored with a hash, and each read verifies it to catch tampering or corruption. The check is showing up in profiling, so a change removes it. Reads get faster, and an altered or corrupted record would now be returned as if it were intact.",
+      "file": "records/read.ts",
+      "delta": "+0 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "async function getRecord(id) {"
+        },
+        {
+          "kind": "ctx",
+          "text": "  const rec = await db.records.get(id)"
+        },
+        {
+          "kind": "del",
+          "text": "-  if (!verifyHash(rec, rec.hash)) throw new IntegrityError(id)"
+        },
+        {
+          "kind": "ctx",
+          "text": "  return rec"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "HIPAA 164.312(c)(1)",
+      "finding": "Removing the verification means an improperly altered or corrupted patient record would be served without anyone noticing, which 164.312(c)(1) (integrity) expects you to protect against. Keep the integrity check; if it is slow, make it cheaper rather than dropping it."
+    },
+    "auditor": {
+      "heading": "Integrity is checked against alteration and destruction.",
+      "paragraph": "A HIPAA review looks at how ePHI is protected from improper change: whether records can be altered or destroyed without detection, and whether there is a mechanism to confirm a record is what it should be. A change that removed an integrity check or turned a guarded update into a destructive one is the concrete gap, and it is visible in the diff to the read or write path."
+    },
+    "boundary": {
+      "title": "A review, not a data-integrity platform.",
+      "paragraph": "heygrc flags changes that touch the integrity safeguard and cites the CFR reference so the fix happens in the pull request. It does not hash your records or run your backups. It catches the moment a change lets ePHI be altered or destroyed without detection, at the diff."
+    }
+  },
+  {
+    "framework": "nist-800-53",
+    "frameworkName": "NIST 800-53",
+    "id": "CM-7",
+    "slug": "least-functionality",
+    "metaTitle": "NIST 800-53 CM-7 in code",
+    "metaDescription": "Least functionality (NIST SP 800-53 CM-7) is the control that says a system should provide only essential capabilities. The shapes it takes in a pull request, a worked example of an SSH server baked into a container image, and what an assessor checks.",
+    "title": "Only the capabilities you actually need.",
+    "intro": [
+      "CM-7 (least functionality) is the NIST 800-53 control that says a system should be configured to provide only its essential capabilities, and to disable or restrict the services, ports, and functions it does not need. Every unnecessary capability is attack surface. And attack surface is added in code: a package installed, a service enabled, a port opened, a feature flag left on."
+    ],
+    "shapesIntro": "Least functionality erodes whenever a change adds a capability the system does not need to do its job. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "An unnecessary service is added",
+        "detail": "A daemon or agent the application does not need (an SSH server, a stray sidecar) is installed and run, adding a service and a port to every instance."
+      },
+      {
+        "label": "A management or debug interface is exposed",
+        "detail": "An admin console, profiler, or debug endpoint is reachable in production, giving an attacker a powerful surface to aim at."
+      },
+      {
+        "label": "A disabled port or protocol is reopened",
+        "detail": "A port or an old protocol that had been turned off is enabled again for convenience, widening what can be reached."
+      },
+      {
+        "label": "A development-only feature is left on",
+        "detail": "A seed route, sample data endpoint, or verbose mode meant for development ships enabled in production."
+      },
+      {
+        "label": "A broad default is left in place",
+        "detail": "An insecure-but-convenient default (directory listing, a wildcard host allowlist) is left on rather than narrowed to what is needed."
+      }
+    ],
+    "example": {
+      "title": "An SSH server baked into a container image.",
+      "setup": "Engineers want to shell into containers to debug, so the image installs an SSH server and starts it on boot. It works, and now every running container runs an sshd it does not need: a service listening for connections across the whole fleet, for occasional convenience.",
+      "file": "Dockerfile",
+      "delta": "+2 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "FROM python:3.12-slim"
+        },
+        {
+          "kind": "add",
+          "text": "+ RUN apt-get update && apt-get install -y openssh-server"
+        },
+        {
+          "kind": "ctx",
+          "text": "COPY . /app"
+        },
+        {
+          "kind": "del",
+          "text": "- CMD [\"python\", \"app.py\"]"
+        },
+        {
+          "kind": "add",
+          "text": "+ CMD service ssh start && python app.py"
+        }
+      ],
+      "clause": "NIST 800-53 CM-7",
+      "finding": "Installing and starting an SSH server makes every container run a service it does not need, listening for connections and widening the attack surface of the whole fleet. CM-7 (least functionality) expects a system to provide only essential capabilities and to disable unnecessary services. Use the platform's exec (kubectl exec, docker exec) to get a shell when you need one, rather than baking an sshd into the image."
+    },
+    "auditor": {
+      "heading": "Least functionality is checked against what is actually running.",
+      "paragraph": "An assessment under NIST 800-53 looks at whether a system runs only what it needs: the services, ports, and functions that are enabled, and whether the unnecessary ones are disabled or restricted. A change that added a service, exposed a management interface, or reopened a port is the concrete expansion of attack surface behind that, and it is visible in the diff to the image, manifest, or config."
+    },
+    "boundary": {
+      "title": "A review, not a hardening pipeline.",
+      "paragraph": "heygrc flags changes that touch CM-7 and cites the control so the fix happens in the pull request. It does not run your benchmark scans or your hardening automation. It catches the moment a change adds a capability the system does not need, at the diff."
+    }
+  },
+  {
+    "framework": "nist-800-53",
+    "frameworkName": "NIST 800-53",
+    "id": "SI-10",
+    "slug": "input-validation",
+    "metaTitle": "NIST 800-53 SI-10 in code",
+    "metaDescription": "Information input validation (NIST SP 800-53 SI-10) is the control that says a system should check the validity of its inputs. The shapes it takes in a pull request, a worked example of a path-traversal from an unvalidated filename, and what an assessor checks.",
+    "title": "Inputs, checked before they are trusted.",
+    "intro": [
+      "SI-10 (information input validation) is the NIST 800-53 control that says a system should check the validity of the inputs it accepts. Unvalidated input is how a request gets a system to do something it should not: read a file outside its directory, call a host it should not, or process malformed data. The validation lives in the code that takes the input, and it is easy to remove without anyone noticing the consequence."
+    ],
+    "shapesIntro": "Input validation weakens when a change lets untrusted input through unchecked. The recurring shapes:",
+    "shapes": [
+      {
+        "label": "A file path is built from unvalidated input",
+        "detail": "A user-supplied name is joined into a path with no check, so a crafted value with ../ can escape the intended directory (path traversal)."
+      },
+      {
+        "label": "A URL or host comes from unvalidated input",
+        "detail": "A request target is taken from input without an allowlist, so the server can be made to call internal or unintended hosts (server-side request forgery)."
+      },
+      {
+        "label": "A validation check is removed",
+        "detail": "A check on an input's format, range, or allowed set is dropped, so malformed or hostile values now reach the logic behind it."
+      },
+      {
+        "label": "Bounds or length checks are removed",
+        "detail": "Size or length limits on input are taken out, so oversized or malformed payloads get through."
+      },
+      {
+        "label": "An allowlist is replaced by accepting anything",
+        "detail": "A strict allowlist of accepted values is loosened to accept arbitrary input, widening what a caller can supply."
+      }
+    ],
+    "example": {
+      "title": "A download path built from an unvalidated name.",
+      "setup": "A download endpoint serves files from an upload directory by name. A change passes the user's filename straight into the path and drops the allowlist check, so a request for a crafted name escapes the directory and reads files it should not.",
+      "file": "files/download.ts",
+      "delta": "+0 -1",
+      "lines": [
+        {
+          "kind": "ctx",
+          "text": "function download(name) {"
+        },
+        {
+          "kind": "del",
+          "text": "-  if (!isAllowedFile(name)) return notFound()"
+        },
+        {
+          "kind": "ctx",
+          "text": "  return readFile(path.join(UPLOAD_DIR, name))"
+        },
+        {
+          "kind": "ctx",
+          "text": "}"
+        }
+      ],
+      "clause": "NIST 800-53 SI-10",
+      "finding": "Without the check, a crafted name like ../../etc/passwd escapes the upload directory (path traversal) and reads arbitrary files. SI-10 (information input validation) expects inputs to be checked for validity. Validate the name against an allowlist, or resolve the path and confirm it stays within the directory before reading."
+    },
+    "auditor": {
+      "heading": "Input validation is checked where untrusted data enters.",
+      "paragraph": "An assessment under NIST 800-53 looks at whether a system validates the inputs it accepts at its trust boundaries: are file names, URLs, identifiers, and payloads checked before they are used. A change that removed a validation or built a path or request from raw input is the concrete weakness behind that, and it is visible in the diff to the handler."
+    },
+    "boundary": {
+      "title": "A review, not a full SAST suite.",
+      "paragraph": "heygrc flags changes that touch SI-10 and cites the control so the fix happens in the pull request. It is not a replacement for your static analysis or fuzzing. It catches the moment a change lets untrusted input through unchecked, at the diff."
+    }
+  }
+]
