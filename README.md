@@ -4,6 +4,25 @@
 
 This is the knowledge base behind [heygrc, compliance review for pull requests](https://heygrc.com). It is published openly because the category is bigger than any product: if you build review tooling, teach secure development, or prepare teams for audits, these patterns are yours to use with attribution (CC BY 4.0).
 
+
+## Why this exists (short)
+
+A pull request can look totally fine (tests pass, no obvious security issue) and still be the kind of change that shows up later in a SOC 2 or GDPR discussion.
+
+Boring examples:
+
+- remove an "admin only" check on delete because auth already runs
+- delete a log line that records role changes because it is noisy
+- add a column for email/phone with no plan for how long you keep it
+
+None of those has to be a bug. They still matter for access control, audit logs, and personal data retention.
+
+This repo is a free collection of those patterns (diffs + short notes). CC BY 4.0.
+
+Optional product that comments on similar issues on real PRs: [heygrc](https://heygrc.com) (does not block merges). Live demo reviews: [heygrc-demo](https://github.com/better-isms/heygrc-demo/pulls).
+
+---
+
 ## Why this dataset exists
 
 Code review already answers two questions about a diff: is it correct, and is it safe. There is a third question that rarely has an owner: does this change touch a control the company is audited on. The defining property of that question is that **clean, working, secure code can still move a control**. A widened IAM role, a trimmed audit log, a new store of personal data with no retention bound: none of these has to be a defect, and each one changes the company's compliance posture.
