@@ -115,3 +115,10 @@ Identifiers and short public labels reference public framework numbering; the ex
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribute "heygrc (heygrc.com)". Corrections welcome: if an identifier is wrong or a gloss is imprecise, open an issue; we would rather fix it than defend it.
 
 Maintained by [ISMS Copilot](https://ismscopilot.com), the team behind heygrc, compliance review for pull requests.
+
+## Related
+
+- Live reviews of these shapes: [better-isms/heygrc-demo](https://github.com/better-isms/heygrc-demo/pulls)
+- Product: [heygrc.com](https://heygrc.com) (compliance review for pull requests)
+- Free starter tool: generate a repo-root [`.heygrc.md`](https://heygrc.com/explore) for company context on reviews (browser-only, no account)
+
