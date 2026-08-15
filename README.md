@@ -1,5 +1,7 @@
 # control-in-code
 
+[![heygrc | PR compliance review](https://heygrc.com/badge.svg)](https://heygrc.com/for/open-source)
+
 **Clean-code changes that move a compliance control.** An open dataset of the pull-request patterns that are neither bugs nor vulnerabilities, and still change what a company must answer for under SOC 2, ISO 27001, GDPR, and other frameworks.
 
 This is the knowledge base behind [heygrc, compliance review for pull requests](https://heygrc.com). It is published openly because the category is bigger than any product: if you build review tooling, teach secure development, or prepare teams for audits, these patterns are yours to use with attribution (CC BY 4.0).
@@ -19,7 +21,7 @@ None of those has to be a bug. They still matter for access control, audit logs,
 
 This repo is a free collection of those patterns (diffs + short notes). CC BY 4.0.
 
-Optional product that comments on similar issues on real PRs: [heygrc](https://heygrc.com) (does not block merges). Live demo reviews: [heygrc-demo](https://github.com/better-isms/heygrc-demo/pulls).
+Optional product that reviews similar issues on real PRs: [heygrc](https://heygrc.com/for/open-source) (check is neutral by default). Live demo reviews: [heygrc-demo](https://github.com/better-isms/heygrc-demo/pulls).
 
 ---
 
