@@ -133,6 +133,25 @@ A scheduled job that deleted the personal data of long-inactive users is dropped
 
 Identifiers and short public labels reference public framework numbering; the explanatory text is original plain English, and no normative framework text is reproduced. Nothing here is legal advice or a compliance determination: which obligations apply depends on the frameworks a company actually holds.
 
+## How to cite
+
+Plain text:
+`control-in-code, heygrc (2026). Clean-code changes that move a compliance control. https://github.com/better-isms/control-in-code`
+
+BibTeX:
+
+```bibtex
+@misc{controlincode2026,
+  title        = {control-in-code: clean-code changes that move a compliance control},
+  author       = {{heygrc}},
+  year         = {2026},
+  howpublished = {\url{https://github.com/better-isms/control-in-code}},
+  note         = {CC BY 4.0. 9 change patterns, 25 control deep-dives}
+}
+```
+
+Do not cite a star count. Cite the dataset and the license.
+
 ## License and attribution
 
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Attribute "heygrc (heygrc.com)". Corrections welcome: if an identifier is wrong or a gloss is imprecise, open an issue; we would rather fix it than defend it.
