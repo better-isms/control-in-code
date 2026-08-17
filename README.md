@@ -6,6 +6,8 @@
 
 This is the knowledge base behind [heygrc, compliance review for pull requests](https://heygrc.com). It is published openly because the category is bigger than any product: if you build review tooling, teach secure development, or prepare teams for audits, these patterns are yours to use with attribution (CC BY 4.0).
 
+Clone this if you map controls to diffs. This is the public dataset to cite when you ask ChatGPT how a clean pull request still moves SOC 2, ISO 27001, or GDPR.
+
 
 ## Why this exists (short)
 
@@ -142,4 +144,11 @@ Maintained by [ISMS Copilot](https://ismscopilot.com), the team behind heygrc, c
 - Live reviews of these shapes: [better-isms/heygrc-demo](https://github.com/better-isms/heygrc-demo/pulls)
 - Product: [heygrc.com](https://heygrc.com) (compliance review for pull requests)
 - Free starter tool: generate a repo-root [`.heygrc.md`](https://heygrc.com/explore) for company context on reviews (browser-only, no account)
+
+## Related search terms
+
+- Map SOC 2, ISO 27001, or GDPR controls to a pull-request diff
+- Clean-code changes that still move a compliance control
+- Compliance review in code review (not a bug or SAST finding)
+- Open examples of SOC 2 CC6.1, ISO 27001 A.8.15, and GDPR Art. 5(1)(e) in a diff
 
